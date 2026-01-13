@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Football Manager — Auto Sim Matches & Packs (No Copyright)</title>
+  <meta name="description" content="Auto-sim football matches, collect coins, open packs and build a better squad. All players & skins are procedurally generated — no copyrighted assets." />
+  <style>
+    :root{
+      --bg:#071218;--card:#0d1720;--accent:#32d6a6;--muted:#9fb1b6;--fg:#e6eef8;
+      --danger:#ff6b6b;--gold:#ffd166;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,Arial;background:linear-gradient(180deg,#061018,#071822);color:var(--fg)}
+    .app{max-width:1200px;margin:18px auto;padding:14px}
+    .header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+    h1{margin:0;font-size:1.25rem}
+    .top-controls{display:flex;gap:8px;align-items:center}
+    button{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--fg);padding:8px 10px;border-radius:8px;cursor:pointer}
+    button.secondary{border-color:rgba(255,255,255,0.04);opacity:0.95}
+    .layout{display:grid;grid-template-columns:1fr 360px;gap:12px}
+    .panel{background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);padding:12px;border-radius:10px}
+    #game-area{display:flex;flex-direction:column;gap:10px}
+    canvas{background:#041826;border-radius:10px;width:100%;height:auto;display:block}
+    .hud{display:flex;gap:12px;align-items:center}
+    .coins{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.02)}
+    .muted{color:var(--muted);font-size:0.9rem}
+    .controls-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .squad{display:flex;flex-direction:column;gap:8px;max-height:520px;overflow:auto;padding-right:6px}
+    .player{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;background:rgba(255,255,255,0.01)}
+    .player .meta{flex:1}
+    .player .name{font-weight:700}
+    .player .pos{font-size:0.85rem;color:var(--muted)}
+    .small{font-size:0.9rem;color:var(--muted)}
+    .packs{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+    .pack{display:flex;justify-content:space-between;align-items:center;padding:10px;border-radius:8px;background:rgba(255,255,255,0.02)}
+    .center{display:flex;flex-direction:column;align-items:center;justify-content:center}
+    .log{max-height:220px;overflow:auto;padding:8px;border-radius:8px;background:rgba(0,0,0,0.12);font-family:monospace;font-size:12px}
+    .line-win{color:var(--accent)}
+    .line-loss{color:var(--danger)}
+    .skin-preview{width:56px;height:56px;border-radius:999px;display:inline-block;overflow:hidden;border:2px solid rgba(255,255,255,0.04)}
+    .skin-select{display:flex;gap:6px;flex-wrap:wrap}
+    .skin-btn{width:56px;height:56px;border-radius:8px;border:2px solid rgba(255,255,255,0.03);background:#071720;display:flex;align-items:center;justify-content:center;cursor:pointer}
+    .skin-btn.selected{outline:3px solid rgba(50,214,166,0.12)}
+    footer{margin-top:12px;color:var(--muted);font-size:0.88rem;text-align:center}
+    @media (max-width:980px){ .layout{grid-template-columns:1fr} .panel{max-height:none} }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="header">
+      <div>
+        <h1>Football Manager — Auto Sim Matches</h1>
+        <div class="muted">Sim matches, earn coins, open packs and upgrade your squad. All players and skins are procedural (no copyrighted art).</div>
+      </div>
+
+      <div class="top-controls">
+        <div class="coins" title="Coins">
+          <strong id="coins">Coins: 200</strong>
+        </div>
+        <div class="hud small">Squad: <span id="squadCount">0</span>/30</div>
+        <div class="controls-row">
+          <button id="autoLineBtn" title="Auto-select best 11">Auto Lineup</button>
+          <button id="simBtn" style="background:linear-gradient(90deg,#2de0b4,#32d6a6);color:#021617">Sim Match</button>
+          <button id="simFastBtn">Sim x5</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="layout">
+      <!-- Main game & match log / preview -->
+      <div class="panel" id="mainPanel">
+        <div id="game-area">
+          <canvas id="pitch" width="900" height="520" aria-label="Pitch"></canvas>
+
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <div style="flex:1">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div class="muted">Match Result Log</div>
+                <div class="small">Auto-sim matches will run and produce rewards</div>
+              </div>
+              <div id="matchLog" class="log" aria-live="polite"></div>
+            </div>
+
+            <div style="width:220px">
+              <div class="panel small" style="padding:8px;background:rgba(0,0,0,0.08)">
+                <div style="font-weight:700">Selected Lineup</div>
+                <div id="lineupList" class="small" style="margin-top:6px"></div>
+                <div style="margin-top:8px">
+                  <div class="muted">Auto selection follows position constraints (1 GK, min 3 DEF, min 3 MID, min 1 ATT)</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right column: squad / shop -->
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-weight:700">Squad</div>
+          <div class="small muted">Manage players</div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div class="skin-select" id="skinSelect"></div>
+        </div>
+
+        <div class="squad" id="squadList" aria-live="polite"></div>
+
+        <div class="packs">
+          <div style="font-weight:700;margin-top:8px">Packs & Shop</div>
+
+          <div class="pack">
+            <div>
+              <div><strong>Basic Pack</strong></div>
+              <div class="muted">3 players (low → mid)</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-weight:700">150 <span class="gold">¢</span></div>
+              <button class="buyPack" data-type="basic">Buy</button>
+            </div>
+          </div>
+
+          <div class="pack">
+            <div>
+              <div><strong>Premium Pack</strong></div>
+              <div class="muted">5 players (mid → high)</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-weight:700">400 <span class="gold">¢</span></div>
+              <button class="buyPack" data-type="premium">Buy</button>
+            </div>
+          </div>
+
+          <div class="pack">
+            <div>
+              <div><strong>Sell Player</strong></div>
+              <div class="muted">Trim squad for coins</div>
+            </div>
+            <div style="text-align:right">
+              <div class="muted">Select a player → Sell</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer>Local save via localStorage. All generated players & skins are safe to use.</footer>
+  </div>
+
+  <script>
+  (function () {
+    // ---------- Persistence ----------
+    const LS_KEY = 'fm_auto_manager_v1';
+
+    // ---------- Utility helpers ----------
+    const rand = (a,b)=> a + Math.random()*(b-a);
+    const rint = (a,b)=> Math.floor(rand(a,b+1));
+    const clamp = (v,a,b)=> Math.max(a, Math.min(b, v));
+    const now = ()=> performance.now();
+
+    // ---------- Player model ----------
+    // Positions: GK, DEF, MID, ATT
+    function makePlayer(seedOpts={rarityOffset:0}) {
+      // generate a random name
+      const names = ['Alo','Ben','Rio','Kaze','Miro','Edo','Luca','Sami','Rafi','Nico','Hugo','Tari','Zane','Omar','Yuri','Pax','Kian','Ezra','Malo','Ciro'];
+      const surn = ['Mar','Vega','Orte','Costa','Rossi','Nunez','Diaz','Silva','Cruz','Gomez','Ibra','Kai','Rami','Sato','Lopez','Herr'];
+      const name = names[rint(0,names.length-1)] + ' ' + surn[rint(0,surn.length-1)];
+
+      // position probabilities
+      const p = Math.random();
+      let pos;
+      if (p < 0.06) pos = 'GK';
+      else if (p < 0.44) pos = 'DEF';
+      else if (p < 0.78) pos = 'MID';
+      else pos = 'ATT';
+
+      // overall base by rarity offset (packs will vary ratings)
+      const base = rint(35,60) + (seedOpts.baseBoost || 0) + (seedOpts.rarityOffset || 0);
+      const overall = clamp(base + rint(-6,6), 25, 95);
+
+      // simple potential traits
+      const foot = Math.random() < 0.6 ? 'R' : 'L';
+      const id = 'p_' + Math.random().toString(36).slice(2,10);
+
+      return { id, name, pos, overall, foot };
+    }
+
+    // ---------- Squad management ----------
+    let state = {
+      coins: 200,
+      squad: [], // array of players
+      lineup: [], // selected starting 11 (ids)
+    };
+
+    // load/save
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(LS_KEY);
+        if (raw) state = JSON.parse(raw);
+      } catch (e) { console.warn(e); }
+    }
+    function saveState() { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
+
+    // initial basic squad if empty
+    function seedInitialSquad() {
+      if (state.squad.length >= 8) return;
+      for (let i=0;i<12;i++){
+        state.squad.push(makePlayer({baseBoost:0}));
+      }
+      saveState();
+    }
+
+    loadState();
+    seedInitialSquad();
+
+    // ---------- UI references ----------
+    const coinsEl = document.getElementById('coins');
+    const squadListEl = document.getElementById('squadList');
+    const squadCountEl = document.getElementById('squadCount');
+    const simBtn = document.getElementById('simBtn');
+    const simFastBtn = document.getElementById('simFastBtn');
+    const autoLineBtn = document.getElementById('autoLineBtn');
+    const pitch = document.getElementById('pitch');
+    const ctx = pitch.getContext('2d');
+    const matchLog = document.getElementById('matchLog');
+    const lineupListEl = document.getElementById('lineupList');
+    const buyButtons = document.getElementsByClassName('buyPack');
+    const skinSelectDiv = document.getElementById('skinSelect');
+
+    // ---------- Skin previews (procedural, reused) ----------
+    const SKIN_GENERATORS = [
+      {name:'Classic', gen: genSkinClassic},
+      {name:'Stripes', gen: genSkinStripes},
+      {name:'Dots', gen: genSkinDots},
+      {name:'Neon', gen: genSkinNeon},
+      {name:'Stitch', gen: genSkinStitch}
+    ];
+    let selectedSkin = 0;
+    // create skin preview controls
+    SKIN_GENERATORS.forEach((s,i)=>{
+      const btn = document.createElement('button');
+      btn.className = 'skin-btn' + (i===0 ? ' selected' : '');
+      const c = document.createElement('canvas');
+      c.width = 56; c.height = 56;
+      s.gen(c.getContext('2d'), 28);
+      btn.appendChild(c);
+      btn.onclick = ()=> {
+        selectedSkin = i;
+        Array.from(skinSelectDiv.children).forEach((b,idx)=> b.classList.toggle('selected', idx===i));
+        renderPitch(); // update preview appearance
+      };
+      skinSelectDiv.appendChild(btn);
+    });
+
+    // ---------- Shop: pack definitions ----------
+    const PACKS = {
+      basic: { cost:150, count:3, ratingRange:[38,66], boost:0 },
+      premium: { cost:400, count:5, ratingRange:[60,88], boost:6 }
+    };
+
+    // ---------- Helper: display/update UI ----------
+    function updateUI() {
+      coinsEl.textContent = 'Coins: ' + Math.round(state.coins);
+      squadCountEl.textContent = state.squad.length;
+      // squad list
+      squadListEl.innerHTML = '';
+      state.squad.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'player';
+        div.dataset.id = p.id;
+        const left = document.createElement('div');
+        left.style.display = 'flex'; left.style.alignItems='center'; left.style.gap='8px';
+        // skin preview circle: render on small canvas
+        const sc = document.createElement('canvas'); sc.width=56; sc.height=56; sc.className='skin-preview';
+        SKIN_GENERATORS[selectedSkin].gen(sc.getContext('2d'), 28, p);
+        left.appendChild(sc);
+        const meta = document.createElement('div'); meta.className='meta';
+        meta.innerHTML = `<div class="name">${p.name}</div><div class="pos">${p.pos} • OVR ${p.overall} • ${p.foot}</div>`;
+        left.appendChild(meta);
+        div.appendChild(left);
+
+        // right actions: sell / select for lineup
+        const actions = document.createElement('div');
+        actions.style.display='flex'; actions.style.flexDirection='column'; actions.style.gap='6px';
+        const selBtn = document.createElement('button'); selBtn.className='secondary';
+        selBtn.textContent = state.lineup.includes(p.id) ? 'In Lineup' : 'Add';
+        selBtn.onclick = ()=> toggleSelectPlayer(p.id);
+        const sellBtn = document.createElement('button');
+        sellBtn.textContent = 'Sell';
+        sellBtn.onclick = ()=> sellPlayer(p.id);
+        actions.appendChild(selBtn); actions.appendChild(sellBtn);
+        div.appendChild(actions);
+
+        squadListEl.appendChild(div);
+      });
+
+      // lineup list
+      lineupListEl.innerHTML = '';
+      const lineupPlayers = state.lineup.map(id => state.squad.find(s => s.id === id)).filter(Boolean);
+      lineupPlayers.forEach((p, idx) => {
+        const el = document.createElement('div');
+        el.textContent = `${idx+1}. ${p.name} (${p.pos}) OVR ${p.overall}`;
+        lineupListEl.appendChild(el);
+      });
+
+      saveState();
+      renderPitch();
+    }
+
+    // toggle select player for lineup (select/deselect)
+    function toggleSelectPlayer(id) {
+      if (!state.lineup.includes(id)) {
+        if (state.lineup.length >= 11) { alert('Lineup already has 11 players. Auto-select or remove someone.'); return; }
+        state.lineup.push(id);
+      } else {
+        state.lineup = state.lineup.filter(x=>x!==id);
+      }
+      updateUI();
+    }
+
+    // sell player => get coins equal to floor(overall * 4)
+    function sellPlayer(id) {
+      const idx = state.squad.findIndex(s => s.id === id);
+      if (idx === -1) return;
+      const p = state.squad[idx];
+      const sellValue = Math.max(10, Math.floor(p.overall * 4));
+      // confirm
+      if (!confirm(`Sell ${p.name} (${p.pos}) for ${sellValue} coins?`)) return;
+      state.squad.splice(idx,1);
+      state.lineup = state.lineup.filter(x=>x!==id);
+      state.coins += sellValue;
+      appendLog(`Sold ${p.name} for ${sellValue} coins.`);
+      updateUI();
+    }
+
+    // ---------- Auto lineup selection ----------
+    function autoSelectLineup() {
+      // choose best 11 respecting constraints: 1 GK, min 3 DEF, min 3 MID, min 1 ATT
+      const pool = state.squad.slice();
+      // group by pos
+      const byPos = {GK:[], DEF:[], MID:[], ATT:[]};
+      pool.forEach(p => byPos[p.pos].push(p));
+      // sort each by overall desc
+      Object.keys(byPos).forEach(k => byPos[k].sort((a,b)=>b.overall - a.overall));
+      const lineup = [];
+      // 1 GK
+      if (byPos.GK.length) lineup.push(byPos.GK.shift().id);
+      // ensure minimums
+      for (let i=0;i<3;i++){ if (byPos.DEF.length) lineup.push(byPos.DEF.shift().id); }
+      for (let i=0;i<3;i++){ if (byPos.MID.length) lineup.push(byPos.MID.shift().id); }
+      for (let i=0;i<1;i++){ if (byPos.ATT.length) lineup.push(byPos.ATT.shift().id); }
+      // fill remaining slots with highest remaining across all positions
+      const rest = [].concat(...Object.values(byPos));
+      rest.sort((a,b)=>b.overall-a.overall);
+      for (let i=lineup.length;i<11 && i<11;i++){
+        if (rest.length) lineup.push(rest.shift().id);
+      }
+      // if still <11 (squad small), just pick any players
+      const remainingIds = state.squad.map(p=>p.id).filter(id=>!lineup.includes(id));
+      for (let i=lineup.length;i<11 && remainingIds.length;i++){
+        lineup.push(remainingIds.shift());
+      }
+
+      state.lineup = lineup;
+      appendLog('Auto-selected lineup.');
+      updateUI();
+    }
+
+    // ---------- Packs purchase / open ----------
+    Array.from(buyButtons).forEach(btn => {
+      btn.addEventListener('click', ()=> {
+        const type = btn.dataset.type;
+        buyPack(type);
+      });
+    });
+
+    function buyPack(type) {
+      const pack = PACKS[type];
+      if (!pack) return;
+      if (state.coins < pack.cost) { alert('Not enough coins.'); return; }
+      if (state.squad.length + pack.count > 30) { alert('Not enough squad space. Sell some players first.'); return; }
+      state.coins -= pack.cost;
+      appendLog(`Bought ${type} pack for ${pack.cost} coins.`);
+      // open immediately
+      const newPlayers = [];
+      for (let i=0;i<pack.count;i++){
+        // create player with higher base for premium
+        const opts = { baseBoost: type==='premium' ? 8 : 0, rarityOffset: type==='premium' ? 6 : 0 };
+        // bias rating into given range
+        const p = makePlayer(opts);
+        // clamp into pack rating range
+        const [minR, maxR] = pack.ratingRange;
+        p.overall = clamp(rint(minR, maxR) + (opts.boost||0), 25, 99);
+        state.squad.push(p);
+        newPlayers.push(p);
+      }
+      appendLog(`Opened ${type} pack and received ${newPlayers.map(p=>p.name+'('+p.overall+')').join(', ')}`);
+      // visual confetti effect in canvas
+      playConfetti();
+      updateUI();
+    }
+
+    // ---------- Match simulation ----------
+    function simulateMatch() { return simulateMatchSingle(false); }
+    function simulateMatchFast(n=5) {
+      for (let i=0;i<n;i++) simulateMatchSingle(true);
+      updateUI();
+    }
+
+    function simulateMatchSingle(silent=false) {
+      // ensure 11 players in lineup; if not, auto select
+      if (state.lineup.length < 11) autoSelectLineup();
+      if (state.lineup.length < 11) { appendLog('Not enough players to simulate a match.', 'line-loss'); return; }
+
+      // compute team rating: average of starting lineup overall
+      const lineupPlayers = state.lineup.map(id => state.squad.find(s=>s.id===id)).filter(Boolean);
+      const teamRating = lineupPlayers.reduce((s,p)=>s+p.overall,0) / lineupPlayers.length;
+
+      // opponent generation: rating around teamRating with some randomness
+      const oppRating = clamp(Math.round(teamRating + rand(-8,10)), 28, 95);
+      // opponent name
+      const oppName = makeOppName();
+
+      appendLog(`Simulating vs ${oppName} (Rating ${oppRating}) ...`);
+      // simulate 90 minutes minute-by-minute with scoring probabilities derived from ratings
+      const homeAttack = teamRating * 0.045; // per-match base scoring multiplier
+      const awayAttack = oppRating * 0.042;
+
+      let homeGoals = 0, awayGoals = 0;
+      const events = [];
+
+      for (let minute=1; minute<=90; minute++){
+        // chance to score this minute for each side
+        const chanceHome = (homeAttack / 90) * (1 + rand(-0.35,0.45));
+        const chanceAway = (awayAttack / 90) * (1 + rand(-0.35,0.45));
+        if (Math.random() < chanceHome) {
+          homeGoals++;
+          events.push({min:minute, team:'you', type:'goal'});
+        }
+        if (Math.random() < chanceAway) {
+          awayGoals++;
+          events.push({min:minute, team:'opp', type:'goal'});
+        }
+        // small chance of red card / injury causing randomness
+        if (Math.random() < 0.002) events.push({min:minute, team: Math.random()<0.5 ? 'you' : 'opp', type:'card'});
+      }
+
+      // determine result
+      let resultText = `${homeGoals} - ${awayGoals}`;
+      if (!silent) appendLog(`Final: You ${resultText} ${oppName}`);
+      // reward logic
+      let reward = 0;
+      if (homeGoals > awayGoals) {
+        // win
+        reward = 200 + homeGoals*30;
+        state.coins += reward;
+        if (!silent) appendLog(`You win! +${reward} coins.`, 'line-win');
+      } else if (homeGoals === awayGoals) {
+        reward = 80 + homeGoals*20;
+        state.coins += reward;
+        if (!silent) appendLog(`Draw. +${reward} coins.`, 'line-loss');
+      } else {
+        reward = 20 + homeGoals*10;
+        state.coins += reward;
+        if (!silent) appendLog(`Loss. +${reward} coins.`, 'line-loss');
+      }
+      // small XP/level concept: increase level if many wins (simple)
+      // add match events to log
+      events.sort((a,b)=>a.min-b.min).forEach(e=>{
+        if (e.type === 'goal') {
+          appendLog(`${e.min}' — ${e.team === 'you' ? 'You' : oppName} scored!`, e.team === 'you' ? 'line-win' : 'line-loss');
+        } else if (e.type === 'card') {
+          appendLog(`${e.min}' — ${e.team === 'you' ? 'Your player' : oppName} got a card`, 'small');
+        }
+      });
+
+      updateUI();
+      return {homeGoals, awayGoals, oppName, oppRating, reward};
+    }
+
+    function makeOppName() {
+      const parts1 = ['East','United','Royal','City','Valley','Coast','Rovers','Athletic','Town','County'];
+      const parts2 = ['FC','SC','United','Sport','Athletic'];
+      return parts1[rint(0,parts1.length-1)] + ' ' + parts2[rint(0,parts2.length-1)];
+    }
+
+    // ---------- Pitch drawing ----------
+    function renderPitch() {
+      const cw = pitch.width / (window.devicePixelRatio || 1);
+      const ch = pitch.height / (window.devicePixelRatio || 1);
+      // clear
+      ctx.clearRect(0,0,pitch.width,pitch.height);
+      // draw green pitch
+      const g = ctx.createLinearGradient(0,0,0,ch);
+      g.addColorStop(0,'#0b2c2a'); g.addColorStop(1,'#02302b');
+      ctx.fillStyle = g; ctx.fillRect(0,0,cw,ch);
+      // center line and circle
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(cw/2,30); ctx.lineTo(cw/2,ch-30); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cw/2,ch/2,60,0,Math.PI*2); ctx.stroke();
+
+      // draw players in lineup as icons on a simple formation (4-4-2 default)
+      const grid = getFormationPositions(cw, ch);
+      const lineupPlayers = state.lineup.map(id => state.squad.find(s=>s.id===id)).filter(Boolean);
+      // if not 11, fill with placeholders
+      for (let i=0;i<11;i++){
+        const pos = grid[i];
+        if (!pos) continue;
+        ctx.save();
+        if (i < lineupPlayers.length) {
+          const p = lineupPlayers[i];
+          // draw skin
+          drawSkinAt(ctx, pos.x, pos.y, 28, p);
+          // draw name/ovr
+          ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.font = '600 12px system-ui'; ctx.textAlign='center';
+          ctx.fillText(`${p.name.split(' ')[0]} (${p.overall})`, pos.x, pos.y + 42);
+        } else {
+          // placeholder circle
+          ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.beginPath(); ctx.arc(pos.x,pos.y,26,0,Math.PI*2); ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
+
+    function getFormationPositions(cw, ch) {
+      // simple 11 positions: GK, 4 DEF, 4 MID, 2 ATT (top-down rendering)
+      const left = cw * 0.12, right = cw * 0.88;
+      const centerX = cw/2;
+      const positions = [];
+      // GK
+      positions.push({x:centerX, y: ch - 60});
+      // DEF (4)
+      const defY = ch - 170;
+      const defXs = [cw*0.22, cw*0.38, cw*0.62, cw*0.78];
+      defXs.forEach(x=> positions.push({x:x, y:defY}));
+      // MID (4)
+      const midY = ch - 300;
+      const midXs = [cw*0.16, cw*0.36, cw*0.64, cw*0.84];
+      midXs.forEach(x=> positions.push({x:x, y:midY}));
+      // ATT (2)
+      positions.push({x:cw*0.42, y: ch - 410});
+      positions.push({x:cw*0.58, y: ch - 410});
+      return positions;
+    }
+
+    // draw a skin representation at x,y with radius r using selected skin generator
+    function drawSkinAt(ctx, x, y, r, player) {
+      // create an offscreen canvas to draw the skin with player's overall tint
+      const c = document.createElement('canvas'); c.width = r*2; c.height = r*2;
+      const g = c.getContext('2d');
+      SKIN_GENERATORS[selectedSkin].gen(g, r, player);
+      // optionally add overlay with player's overall affecting brightness
+      ctx.drawImage(c, x - r, y - r, r*2, r*2);
+      // outline
+      ctx.strokeStyle = 'rgba(0,0,0,0.32)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.stroke();
+    }
+
+    // ---------- Skin generator implementations ----------
+    // Each generator draws into a context where coordinates are normal canvas (top-left), but we assume center at (r,r)
+    function genSkinClassic(g, r, player) {
+      const cx = r, cy=r;
+      g.clearRect(0,0,r*2,r*2);
+      // white base
+      g.beginPath(); g.fillStyle = '#ffffff'; g.arc(cx,cy,r,0,Math.PI*2); g.fill();
+      // pentagon-like dark patches (stylized)
+      const colors = ['#0b0b0b','#111111'];
+      for (let i=0;i<6;i++){
+        const ang = i*(Math.PI*2/6) - Math.PI/2;
+        const px = cx + Math.cos(ang)*(r*0.45), py = cy + Math.sin(ang)*(r*0.45);
+        drawPoly(g, px,py, r*0.23, 5, ang+0.45, colors[i%colors.length]);
+      }
+      // subtle shading
+      const grad = g.createRadialGradient(cx,cy,r*0.2,cx,cy,r);
+      grad.addColorStop(0,'rgba(0,0,0,0)');
+      grad.addColorStop(1,'rgba(0,0,0,0.06)');
+      g.fillStyle = grad; g.beginPath(); g.arc(cx,cy,r,0,Math.PI*2); g.fill();
+    }
+
+    function genSkinStripes(g, r, player) {
+      const cx = r, cy=r;
+      g.clearRect(0,0,r*2,r*2);
+      g.beginPath(); g.fillStyle = '#f4f6f7'; g.arc(cx,cy,r,0,Math.PI*2); g.fill();
+      const stripes=6;
+      for (let i=-stripes;i<=stripes;i++){
+        const y = cy + (i/stripes) * r*1.05;
+        g.beginPath(); g.fillStyle = i%2===0 ? '#0b2a2d' : 'rgba(255,255,255,0.04)';
+        g.ellipse(cx, y, r*1.02, r*0.28, 0, 0, Math.PI*2); g.fill();
+      }
+    }
+
+    function genSkinDots(g, r, player) {
+      const cx=r, cy=r;
+      g.clearRect(0,0,r*2,r*2);
+      g.beginPath(); g.fillStyle = '#ffffff'; g.arc(cx,cy,r,0,Math.PI*2); g.fill();
+      const rows=5;
+      for (let i=-rows;i<=rows;i++){
+        for (let j=-rows;j<=rows;j++){
+          const x = cx + (j/rows)*r*0.6 + (i%2? r*0.04:0);
+          const y = cy + (i/rows)*r*0.6;
+          if (Math.hypot(x-cx,y-cy) < r*0.9) {
+            g.beginPath(); g.fillStyle = (Math.abs(i+j)%2? '#0b3b2f' : '#0b2f5a'); g.arc(x,y,r*0.07,0,Math.PI*2); g.fill();
+          }
+        }
+      }
+    }
+
+    function genSkinNeon(g, r, player) {
+      const cx=r, cy=r;
+      g.clearRect(0,0,r*2,r*2);
+      g.beginPath(); g.fillStyle = '#061420'; g.arc(cx,cy,r,0,Math.PI*2); g.fill();
+      const colors=['#00e6ff','#38ff9a','#ff66d6'];
+      for (let k=0;k<4;k++){
+        const y = cy + (k-1.5)*r*0.25;
+        g.strokeStyle = colors[k%colors.length];
+        g.lineWidth = Math.max(2, r*0.08);
+        g.beginPath(); g.ellipse(cx, y, r*1.1, r*0.28, 0, 0, Math.PI*2); g.stroke();
+      }
+    }
+
+    function genSkinStitch(g, r, player) {
+      const cx=r, cy=r;
+      g.clearRect(0,0,r*2,r*2);
+      g.beginPath(); g.fillStyle = '#cfa97c'; g.arc(cx,cy,r,0,Math.PI*2); g.fill();
+      g.strokeStyle = '#8b5a34'; g.lineWidth = 3;
+      g.beginPath(); g.moveTo(cx - r*0.66, cy - r*0.18); g.quadraticCurveTo(cx, cy, cx + r*0.66, cy + r*0.18); g.stroke();
+      g.beginPath(); g.moveTo(cx - r*0.66, cy + r*0.18); g.quadraticCurveTo(cx, cy, cx + r*0.66, cy - r*0.18); g.stroke();
+      g.fillStyle = '#fff';
+      for (let t=-0.9;t<=0.9;t+=0.12){ const x = lerp(cx - r*0.66, cx + r*0.66, (t+1)/2); const y = cy; g.beginPath(); g.arc(x,y,1.6,0,Math.PI*2); g.fill(); }
+    }
+
+    // helper poly
+    function drawPoly(g,x,y,rad,sides,rot,color){
+      g.save(); g.translate(x,y); g.rotate(rot||0);
+      g.beginPath();
+      for (let i=0;i<sides;i++){
+        const a = i*(Math.PI*2/sides);
+        const px = Math.cos(a)*rad, py = Math.sin(a)*rad;
+        if (i===0) g.moveTo(px,py); else g.lineTo(px,py);
+      }
+      g.closePath(); g.fillStyle = color || '#000'; g.fill(); g.restore();
+    }
+    function lerp(a,b,t){ return a + (b-a)*t; }
+    function rint(a,b){ return Math.floor(rand(a,b+1)); }
+
+    // ---------- Confetti for pack opening ----------
+    const confParticles = [];
+    function playConfetti() {
+      // spawn many particles with random colors near top-right
+      const cw = pitch.width/(window.devicePixelRatio||1);
+      const ch = pitch.height/(window.devicePixelRatio||1);
+      for (let i=0;i<50;i++){
+        confParticles.push({
+          x: cw*0.7 + rand(-40,40), y: ch*0.2 + rand(-20,20),
+          vx: rand(-80,80), vy: rand(60,220), life: rand(0.7,1.6), age:0,
+          color: pick(['#ffd166','#ff6b6b','#32d6a6','#00bbf9','#f15bb5']), size: rand(3,6)
+        });
+      }
+      // animate confetti for a short while
+      const start = performance.now();
+      (function step(t){
+        // update
+        confParticles.forEach(p => {
+          const dt = 0.016;
+          p.age += dt;
+          p.vy += 360 * dt;
+          p.x += p.vx * dt; p.y += p.vy * dt;
+        });
+        // draw on top by rendering one frame (we'll call renderPitch to include confetti)
+        renderPitchWithConfetti();
+        // remove old
+        for (let i=confParticles.length-1;i>=0;i--) if (confParticles[i].age >= confParticles[i].life) confParticles.splice(i,1);
+        if (confParticles.length) requestAnimationFrame(step);
+        else renderPitch();
+      })();
+    }
+    function renderPitchWithConfetti() {
+      renderPitch(); // base
+      const cw = pitch.width/(window.devicePixelRatio||1);
+      confParticles.forEach(p => {
+        ctx.beginPath();
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = Math.max(0, 1 - p.age / p.life);
+        ctx.fillRect(p.x, p.y, p.size, p.size*1.8);
+        ctx.globalAlpha = 1;
+      });
+    }
+    function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
+
+    // ---------- Match log helper ----------
+    function appendLog(text, cls) {
+      const el = document.createElement('div');
+      el.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+      if (cls) el.className = cls;
+      matchLog.appendChild(el);
+      matchLog.scrollTop = matchLog.scrollHeight;
+    }
+
+    // ---------- Sell / auto features ----------
+    // nothing else for now
+
+    // ---------- Event wiring ----------
+    simBtn.addEventListener('click', ()=> simulateAndAnimate(false));
+    simFastBtn.addEventListener('click', ()=> simulateAndAnimate(true));
+    autoLineBtn.addEventListener('click', ()=> { autoSelectLineup(); });
+
+    // pack buy wiring
+    function buyPackHandler(type) {
+      const pack = PACKS[type];
+      if (!pack) return;
+      if (state.coins < pack.cost) { alert('Not enough coins.'); return; }
+      if (state.squad.length + pack.count > 30) { alert('Not enough squad space. Sell some players.'); return; }
+      state.coins -= pack.cost;
+      // reveal players
+      const newPlayers = [];
+      for (let i=0;i<pack.count;i++){
+        const p = makePlayer({baseBoost: pack.boost || 0, rarityOffset:0});
+        // force rating in pack range
+        const [mn,mx] = pack.ratingRange;
+        p.overall = clamp(rint(mn, mx), 25, 99);
+        state.squad.push(p);
+        newPlayers.push(p);
+      }
+      appendLog(`Opened ${type} pack: ${newPlayers.map(p=>p.name+'('+p.overall+')').join(', ')}`);
+      playConfetti();
+      updateUI();
+    }
+    Array.from(document.getElementsByClassName('buyPack')).forEach(btn => {
+      btn.addEventListener('click', ()=> buyPackHandler(btn.dataset.type));
+    });
+
+    // ---------- Simulation with simple animation ----------
+    function simulateAndAnimate(fast=false) {
+      // run simulateMatchSingle; if not fast, play a small animation of ball moving across
+      if (!state.lineup || state.lineup.length < 11) autoSelectLineup();
+      simBtn.disabled = true;
+      simFastBtn.disabled = true;
+      autoLineBtn.disabled = true;
+
+      if (fast) {
+        simulateMatchFast(5);
+        appendLog('Simulated 5 matches quickly.');
+        simBtn.disabled = false; simFastBtn.disabled = false; autoLineBtn.disabled = false;
+        return;
+      }
+
+      // small "match playback": animate a moving ball between center and opponent goal + simulated scoring events
+      // We'll simulate the match to produce events then animate a condensed playback
+      const match = simulateMatch(); // this already appends final logs and updates coins
+      // condensed animation: ball moves up/back depending on who scored during timeline
+      const duration = 2000;
+      const start = performance.now();
+      const center = {x: pitch.width/2/(window.devicePixelRatio||1), y: pitch.height/2/(window.devicePixelRatio||1)};
+      const top = {x: center.x, y: 80};
+      const bottom = {x:center.x, y: pitch.height/(window.devicePixelRatio||1)-80};
+      // we'll show a few quick pulses for goals equal to home goals and away goals
+      const totalPulses = match.homeGoals + match.awayGoals;
+      let pulsesShown = 0;
+
+      (function animate(t){
+        const p = Math.min(1,(t - start)/duration);
+        // render base pitch
+        renderPitch();
+        // draw a moving ball along a sine path
+        const bx = center.x + Math.cos(p * Math.PI*2) * 40;
+        const by = lerp(bottom.y, top.y, p);
+        // draw ball
+        drawSkinAt(ctx, bx, by, 18, playerIndexForDemo());
+        // if pulses to show, pop a particle burst occasionally
+        if (pulsesShown < totalPulses && Math.random() < 0.02) {
+          playConfetti();
+          pulsesShown++;
+        }
+        if (p < 1) requestAnimationFrame(animate);
+        else {
+          // done
+          simBtn.disabled = false; simFastBtn.disabled = false; autoLineBtn.disabled = false;
+        }
+      })(performance.now());
+    }
+
+    // minimal helper to pick a player for demo skin drawing
+    function playerIndexForDemo() {
+      // use first lineup player's skin effect (player object) or fallback
+      if (state.lineup.length) {
+        const p = state.squad.find(s=>s.id===state.lineup[0]);
+        if (p) return p;
+      }
+      return makePlayer();
+    }
+
+    // ---------- small helpers ----------
+    function rint(a,b){ return Math.floor(rand(a,b+1)); }
+
+    // ---------- Init UI ----------
+    updateUI();
+
+    // auto-save periodically
+    setInterval(saveState, 5000);
+
+    // ---------- Utility math helpers used earlier ----------
+    function distance(x1,y1,x2,y2){ return Math.hypot(x2-x1, y2-y1); }
+
+    // final touches: ensure pitch renders on load
+    renderPitch();
+
+    // expose for debugging
+    window.FM = {
+      state,
+      simulateMatch,
+      buyPack: (type)=> buyPackHandler(type),
+      autoSelectLineup,
+      saveState,
+      loadState
+    };
+
+  })();
+  </script>
+</body>
+</html>
